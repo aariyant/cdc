@@ -220,32 +220,6 @@ docker-compose up -d debezium-ui
 
 ---
 
-## ➕ Register a Debezium Connector (MySQL Example)
-
-Replace the database connection details with your setup.
-
-```bash
-curl -X POST http://localhost:8083/connectors \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "my-connector",
-    "config": {
-      "connector.class": "io.debezium.connector.mysql.MySqlConnector",
-      "database.hostname": "mysql",
-      "database.port": "3306",
-      "database.user": "debezium",
-      "database.password": "dbz",
-      "database.server.id": "184054",
-      "database.server.name": "dbserver1",
-      "database.include.list": "mydb",
-      "database.history.kafka.bootstrap.servers": "broker:29092",
-      "database.history.kafka.topic": "schema-changes.mydb"
-    }
-  }'
-```
-
----
-
 ## ✅ Check Container Status
 
 ```bash
@@ -253,6 +227,156 @@ docker-compose ps
 ```
 
 All services should show `Up`.
+
+---
+
+## ➕ Debezium Connector
+
+### -> Create Source Connector (MySQL Example)
+Create json configuration and replace the database connection details with your setup.
+
+```bash
+#source-crud-flask.json
+
+{
+    "name": "source-crud-flask",
+    "config": {
+        "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+        "tasks.max": "1",
+        "autoReconnect": "true",
+        "database.hostname": "phonebook-mysql",
+        "database.port": "3306",
+        "database.user": "root",
+        "database.password": "dev123",
+        "database.server.id": "3306",
+        "database.include.list": "crud_flask",
+        "database.connectionTimeZone": "Asia/Jakarta",
+        "topic.prefix": "mysql-source-crud-flask",
+        "table.include.list": "crud_flask.phone_book",
+        "transforms.escapeReservedKeywords.replacement": "`$1`",
+        "schema.history.internal.kafka.bootstrap.servers": "broker:29092",
+        "schema.history.internal.kafka.topic": "schema-changes.mysql-source-crud-flask"
+    }
+}
+```
+
+Create source connector with curl.
+```bash
+curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors -k -d @source-crud-flask.json
+```
+
+---
+### -> Create Target Connector (MySQL Example)
+```bash
+#target-crud-flask-phone_book.json
+
+{
+    "name": "target-crud-flask-phone_book",
+    "config": {
+        "autoReconnect": "true",
+        "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+        "tasks.max": "1",
+        "connection.url": "jdbc:mysql://phonebook-mysql:3306/phone_book_replica",
+        "connection.username": "root",
+        "connection.password": "dev123",
+        "connection.pool.min_size": 1,
+        "connection.pool.max_size": 2,
+        "connection.pool.timeout": 300,
+        "insert.mode": "upsert",
+        "delete.enabled": "true",
+        "schema.evolution": "basic",
+        "auto.create": "true",
+        "topics.regex": "mysql-source-crud-flask.crud_flask.phone_book",
+        "error.log.enable": "true",
+        "primary.key.mode": "record_key",
+        "quote.identifiers": "true",
+        "transforms": "route",
+        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.route.regex": "mysql-source-crud-flask.crud_flask.phone_book",
+        "transforms.route.replacement": "phone_book",
+        "table.name.format": "${topic}"
+    }
+}
+```
+
+Create target connector with curl.
+```bash
+curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors -k -d @target-crud-flask-phone_book.json
+```
+
+### -> Create Target Connector (PostgreSQL Example)
+```bash
+#target-crud-flask-phone_book.json
+{
+    "name": "target-crud-flask-phone_book",
+    "config": {
+        "autoReconnect": "true",
+        "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+        "tasks.max": "1",
+        "connection.url": "jdbc:postgresql://phonebook-postgres:5432/crud_flask?currentSchema=public",
+        "connection.username": "root",
+        "connection.password": "dev123",
+        "connection.pool.min_size": 1,
+        "connection.pool.max_size": 2,
+        "connection.pool.timeout": 300,
+        "insert.mode": "upsert",
+        "delete.enabled": "true",
+        "schema.evolution": "basic",
+        "auto.create": "true",
+        "topics.regex": "mysql-source-crud-flask.crud_flask.phone_book",
+        "error.log.enable": "true",
+        "primary.key.mode": "record_key",
+        "quote.identifiers": "true",
+        "transforms": "route",
+        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.route.regex": "mysql-source-crud-flask.crud_flask.phone_book",
+        "transforms.route.replacement": "phone_book",
+        "table.name.format": "${topic}"
+    }
+}
+```
+Create target connector with curl.
+```bash
+curl -i -X GET -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors
+```
+
+### -> Get All Connectors List
+```bash
+curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors -k -d @target-crud-flask-phone_book.json
+```
+
+### -> Delete Connector
+```bash
+curl -i -X DELETE -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors/<connector_name>
+```
+
+## ➕ Debezium Connector Offsets
+
+|Method | Path | Description|
+|-------|------|------------|
+|GET    |/connectors/<connector_name>/offsets|Get current target connector offset position|
+|PATCH  |/connectors/<connector_name>/offsets|Change current offset to another offset position|
+|DELETE |/connectors/<connector_name>/offsets|Delete a offset position from connector
+
+### -> Patch Connector Offset
+```bash
+curl --location --globoff --request PATCH 'http://localhost:8083/connectors/source-eabsenpu/offsets/' \
+--header 'Content-Type: application/json' \
+--data '{
+  "offsets":[
+     {
+        "partition":{
+           "server":"mysql-source-crud-flask"
+        },
+        "offset":{
+        	"ts_sec": 1746288967,
+        	"file": "bin.000002",
+        	"pos": 4
+        }
+     }
+  ]
+}'
+```
 
 ---
 
