@@ -1,0 +1,30 @@
+services:
+  mariadb:
+    image: mariadb:10.5.18
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql-pass
+      MYSQL_DATABASE: mariadb_database
+    ports:
+      - ${MARIADB_PORT:-4406}:3306
+    volumes:
+      - ./data/mariadb_data:/var/lib/mysql:rw
+      - ./config/mariadb/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - debezium-compose_debezium
+  
+  postgres:
+    image: postgres:14-alpine
+    ports:
+      - ${POSTGRES_PORT:-6543}:5432
+    volumes:
+      - ./data/postgres_data/:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=postgres-pass
+      - POSTGRES_DB=postgres_database
+    networks:
+      - debezium-compose_debezium
+
+networks:
+  debezium-compose_debezium:
+    external: true

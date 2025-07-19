@@ -1,0 +1,27 @@
+{
+    "name": "target-classicmodels-postgres-customers",
+    "config": {
+        "autoReconnect": "true",
+        "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+        "tasks.max": "1",
+        "connection.url": "jdbc:postgresql://postgres:5432/postgres",
+        "connection.username": "postgres",
+        "connection.password": "postgres-pass",
+	"connection.pool.min_size": 1,
+        "connection.pool.max_size": 2,
+        "connection.pool.timeout": 300,
+        "insert.mode": "upsert",
+        "delete.enabled": "true",
+        "schema.evolution": "basic",
+        "auto.create": "true",
+        "topics.regex": "mysql-source-classicmodels.classicmodels.customers",
+        "error.log.enable": "true",
+        "primary.key.mode": "record_key",
+        "quote.identifiers": "true",
+        "transforms": "route",
+        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.route.regex": "mysql-source-classicmodels.classicmodels.customers",
+        "transforms.route.replacement": "customers",
+        "table.name.format": "${topic}"
+    }
+}

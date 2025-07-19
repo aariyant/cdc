@@ -1,0 +1,20 @@
+{
+    "name": "source-classicmodels",
+    "config": {
+        "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+        "tasks.max": "1",
+        "autoReconnect": "true",
+        "database.hostname": "mariadb",
+        "database.port": "3306",
+        "database.user": "root",
+        "database.password": "mysql-pass",
+        "database.server.id": "3363",
+        "database.include.list": "classicmodels",
+        "topic.prefix": "mysql-source-classicmodels",
+	"table.include.list": "classicmodels.customers,classicmodels.offices",
+        "transforms.escapeReservedKeywords.replacement": "`$1`",
+        "schema.history.internal.kafka.bootstrap.servers": "broker:29092",
+        "schema.history.internal.kafka.topic": "schema-changes.mysql-source-classicmodels",
+	"signal.data.collection": "classicmodels.source-classicmodels-signal"
+    }
+}
