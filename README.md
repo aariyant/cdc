@@ -1,59 +1,71 @@
-# 🧪 Kafka + Schema Registry + Debezium Tutorial
+# Kafka + Schema Registry + Debezium Tutorial
 
 This tutorial will guide you through running and verifying a Kafka-based CDC (Change Data Capture) pipeline using **Kafka**, **Schema Registry**, and **Debezium**, all orchestrated via Docker Compose.
 
 ---
 
-## 📋 Prerequisites
+## Table of Contents
 
-- Docker
-- Docker Compose
-- Basic understanding of Kafka and Debezium
+1. [Prerequisites](#prerequisites)
+2. [Project Structure](#project-structure)
+3. [Step-by-Step Setup](#step-by-step-setup)
+4. [Debezium Connector](#debezium-connector)
+5. [Debezium Connector Offsets](#debezium-connector-offsets)
+6. [CDC Verification Example](#cdc-verification-example)
+7. [Cleanup](#cleanup)
+8. [Troubleshooting Tips](#troubleshooting-tips)
+9. [Notes](#notes)
 
 ---
 
-## 🗂️ Project Structure
+## Prerequisites
+
+- Docker: Required to run each component in isolated containers.
+- Docker Compose: Simplifies the orchestration of all required services.
+- Basic understanding of Kafka and Debezium: Helps understand how messages are streamed and managed via connectors.
+
+---
+
+## Project Structure
+
+This layout outlines what each file/folder is used for in the tutorial.
 
 ```
 .
-├── docker-compose.yml
-├── kafka-data/
-├── config/
-│   └── zookeeper.properties
-├── kafka-ui-config.yaml
+├── db-compose
+│   └── docker-compose.yaml
+├── debezium-compose
+│   ├── docker-compose.yml
+│   ├── data/
+│   │   └── kafka-data/
+│   ├── config/
+│   │   └── kafka-ui/
+│   │       └── kafka-ui-config.yaml
 ```
 
 ---
 
-## 🚀 Step-by-Step Setup
+## Step-by-Step Setup Debezium
 
-### 1. 🧠 Start Zookeeper
+Follow these steps in order to bring up the services. Each service should be started and verified before moving to the next to ensure proper communication and dependencies are resolved.
 
-Zookeeper is a distributed coordination service that Kafka depends on for broker coordination, metadata management, and leader election. In this setup, the Zookeeper service is defined in the `docker-compose.yaml` file with the following configuration:
+---
 
-- **Image**: `confluentinc/cp-zookeeper:7.3.1` — The official Zookeeper image provided by Confluent.
-- **Hostname**: `zookeeper` — The hostname used within the Docker network.
-- **Ports**: Exposes port `2181` for client connections.
-- **Environment Variables**:
-  - `ZOOKEEPER_CLIENT_PORT`: The port Zookeeper listens on for client connections (default: `2181`).
-  - `ZOOKEEPER_TICK_TIME`: The basic time unit in milliseconds used by Zookeeper for heartbeats and timeouts (default: `2000` ms).
-  - `KAFKA_OPTS` and `KAFKA_HEAP_OPTS`: JVM options for tuning Zookeeper's performance.
-- **Volumes**: Mounts the `zookeeper.properties` configuration file from the `./config/` directory to `/etc/kafka/zookeeper.properties` inside the container.
-- **Healthcheck**: Ensures the service is healthy by checking if Zookeeper responds on port `2181`.
+### 1. Start Zookeeper
 
-To start Zookeeper, run:
+Zookeeper is a required coordination service that Kafka depends on.
 
 ```bash
 docker-compose up -d zookeeper
 ```
 
-✅ **Verify**:
+Verify that Zookeeper has started:
 
 ```bash
 docker logs -f zookeeper
 ```
 
-Look for:
+You should see a line similar to:
 
 ```
 binding to port 0.0.0.0/0.0.0.0:2181
@@ -61,35 +73,21 @@ binding to port 0.0.0.0/0.0.0.0:2181
 
 ---
 
-### 2. 📡 Start Kafka Broker
+### 2. Start Kafka Broker
 
-Kafka is the core message broker in this CDC pipeline. It relies on Zookeeper for broker coordination and metadata management. The Kafka service is defined in the `docker-compose.yaml` file with the following configuration:
-
-- **Image**: `confluentinc/cp-kafka:7.3.1` — The official Kafka image provided by Confluent.
-- **Hostname**: `broker` — The hostname used within the Docker network.
-- **Ports**:
-  - `9092`: Exposed for host access.
-  - `29092`: Used for internal Docker network communication.
-- **Environment Variables**:
-  - `KAFKA_ZOOKEEPER_CONNECT`: Specifies the Zookeeper connection string (`zookeeper:2181`).
-  - `KAFKA_ADVERTISED_LISTENERS`: Configures how Kafka advertises itself to clients.
-  - `KAFKA_AUTO_CREATE_TOPICS_ENABLE`: Enables automatic topic creation (default: `true`).
-- **Volumes**: Mounts the `kafka-data` directory to persist Kafka data.
-- **Healthcheck**: Ensures the service is healthy by checking if Kafka responds on port `9092`.
-
-To start Kafka, run:
+The Kafka broker handles message queues, topics, producers, and consumers.
 
 ```bash
 docker-compose up -d broker
 ```
 
-✅ **Verify**:
+Check Kafka logs to confirm it started correctly:
 
 ```bash
 docker logs -f broker
 ```
 
-Look for:
+Look for a message like:
 
 ```
 started (kafka.server.KafkaServer)
@@ -97,73 +95,49 @@ started (kafka.server.KafkaServer)
 
 ---
 
-### 3. 🖥️ Kafka UI (Optional)
+### 3. Kafka UI (Optional)
 
-Kafka UI is a web-based interface for browsing Kafka topics and inspecting messages. The Kafka UI service is defined in the `docker-compose.yaml` file with the following configuration:
-
-- **Image**: `provectuslabs/kafka-ui:latest` — The official Kafka UI image.
-- **Hostname**: `kafka-ui` — The hostname used within the Docker network.
-- **Ports**: Exposes port `8180` for accessing the UI.
-- **Environment Variables**:
-  - `DYNAMIC_CONFIG_ENABLED`: Enables dynamic configuration (default: `true`).
-- **Volumes**: Mounts the `kafka-ui-config.yaml` file for custom configurations.
-
-To start Kafka UI, run:
+Launches a web-based interface to view and interact with Kafka topics and consumer groups.
 
 ```bash
 docker-compose up -d kafka-ui
 ```
 
-🌐 Open: [http://localhost:8180](http://localhost:8180)
+Access the UI via: [http://localhost:8180](http://localhost:8180)
 
 ---
 
-### 4. 📚 Start Schema Registry
+### 4. Start Schema Registry
 
-The Schema Registry manages schemas for Kafka messages, ensuring compatibility between producers and consumers. The Schema Registry service is defined in the `docker-compose.yaml` file with the following configuration:
-
-- **Image**: `confluentinc/cp-schema-registry:7.3.1` — The official Schema Registry image provided by Confluent.
-- **Hostname**: `schema-registry` — The hostname used within the Docker network.
-- **Ports**: Exposes port `8081` for accessing the Schema Registry API.
-- **Environment Variables**:
-  - `SCHEMA_REGISTRY_HOST_NAME`: Sets the hostname for the Schema Registry.
-  - `SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS`: Specifies the Kafka bootstrap servers.
-- **Healthcheck**: Ensures the service is healthy by checking if the Schema Registry API responds.
-
-To start the Schema Registry, run:
+Schema Registry manages Avro, Protobuf, or JSON schemas used by Kafka producers and consumers.
 
 ```bash
 docker-compose up -d schema-registry
 ```
 
-✅ **Verify**:
+Check it’s working:
 
 ```bash
 curl http://localhost:8081/subjects
 ```
 
-Should return an empty array `[]` if no schema exists yet.
+If no schemas exist yet, it should return:
+
+```
+[]
+```
 
 ---
 
-### 5. 🌐 Kafka REST Proxy (Optional)
+### 5. Kafka REST Proxy (Optional)
 
-The Kafka REST Proxy provides HTTP-based access to Kafka, allowing you to produce and consume messages via REST APIs. The REST Proxy service is defined in the `docker-compose.yaml` file with the following configuration:
-
-- **Image**: `confluentinc/cp-kafka-rest:7.3.1` — The official Kafka REST Proxy image.
-- **Hostname**: `rest-proxy` — The hostname used within the Docker network.
-- **Ports**: Exposes port `8082` for accessing the REST API.
-- **Environment Variables**:
-  - `KAFKA_REST_BOOTSTRAP_SERVERS`: Specifies the Kafka bootstrap servers.
-  - `KAFKA_REST_LISTENERS`: Configures the REST Proxy listeners.
-
-To start the REST Proxy, run:
+Enables HTTP access to Kafka, allowing REST clients to interact with Kafka topics.
 
 ```bash
 docker-compose up -d rest-proxy
 ```
 
-✅ **Test**:
+Test if it works:
 
 ```bash
 curl http://localhost:8082/topics
@@ -171,244 +145,635 @@ curl http://localhost:8082/topics
 
 ---
 
-### 6. 🔄 Start Debezium Connect
+### 6. Start Debezium Connect
 
-Debezium Connect is a Kafka Connect instance with the Debezium plugin for capturing database changes. The Debezium service is defined in the `docker-compose.yaml` file with the following configuration:
-
-- **Image**: `quay.io/debezium/connect:3.0` — The official Debezium Connect image.
-- **Hostname**: `debezium` — The hostname used within the Docker network.
-- **Ports**: Exposes port `8083` for accessing the Kafka Connect REST API.
-- **Environment Variables**:
-  - `BOOTSTRAP_SERVERS`: Specifies the Kafka bootstrap servers.
-  - `KEY_CONVERTER` and `VALUE_CONVERTER`: Configures the message format (e.g., JSON).
-  - `OFFSET_STORAGE_TOPIC`: Specifies the topic for storing offsets.
-- **Healthcheck**: Ensures the service is healthy by checking if the Kafka Connect API responds.
-
-To start Debezium Connect, run:
+This starts the Kafka Connect service with Debezium plugins for capturing database changes.
 
 ```bash
 docker-compose up -d debezium
 ```
 
-✅ **Test**:
+Confirm it's ready to register connectors:
 
 ```bash
 curl http://localhost:8083/connectors
 ```
 
-Returns `[]` if no connectors are registered yet.
+It should return:
+
+```
+[]
+```
 
 ---
 
-### 7. 🧭 Debezium UI (Optional)
+### 7. Debezium UI (Optional)
 
-Debezium UI provides a web-based interface for managing and monitoring Debezium connectors. The Debezium UI service is defined in the `docker-compose.yaml` file with the following configuration:
-
-- **Image**: `debezium/debezium-ui:latest` — The official Debezium UI image.
-- **Hostname**: `debezium-ui` — The hostname used within the Docker network.
-- **Ports**: Exposes port `8080` for accessing the UI.
-- **Environment Variables**:
-  - `KAFKA_CONNECT_URIS`: Specifies the Kafka Connect REST API URL.
-
-To start Debezium UI, run:
+A visual interface to create and manage Debezium connectors without using raw REST API.
 
 ```bash
 docker-compose up -d debezium-ui
 ```
 
-🌐 Open: [http://localhost:8080](http://localhost:8080)
+Access it at: [http://localhost:8080](http://localhost:8080)
 
 ---
 
-## ✅ Check Container Status
+## Check Container Status
+
+You can verify the state of all containers using:
 
 ```bash
 docker-compose ps
 ```
 
-All services should show `Up`.
+Make sure all required services are listed and running.
 
 ---
 
-## ➕ Debezium Connector
+## Step-by-Step Setup: Database
 
-### -> Create Source Connector (MySQL Example)
-Create json configuration and replace the database connection details with your setup.
+### 1. Start Databases (MariaDB & PostgreSQL)
+
+To test the CDC (Change Data Capture) pipeline, this tutorial uses **MariaDB** as the **source** and **PostgreSQL** as the **target**.
+
+Start all required services (including both databases):
 
 ```bash
-#source-crud-flask.json
-
-{
-    "name": "source-crud-flask",
-    "config": {
-        "connector.class": "io.debezium.connector.mysql.MySqlConnector",
-        "tasks.max": "1",
-        "autoReconnect": "true",
-        "database.hostname": "phonebook-mysql",
-        "database.port": "3306",
-        "database.user": "root",
-        "database.password": "dev123",
-        "database.server.id": "3306",
-        "database.include.list": "crud_flask",
-        "database.connectionTimeZone": "Asia/Jakarta",
-        "topic.prefix": "mysql-source-crud-flask",
-        "table.include.list": "crud_flask.phone_book",
-        "transforms.escapeReservedKeywords.replacement": "`$1`",
-        "schema.history.internal.kafka.bootstrap.servers": "broker:29092",
-        "schema.history.internal.kafka.topic": "schema-changes.mysql-source-crud-flask"
-    }
-}
+docker-compose up -d
 ```
 
-Create source connector with curl.
-```bash
-curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors -k -d @source-crud-flask.json
-```
+This will launch:
+- MariaDB (source connector target)
+- PostgreSQL (sink connector target)
+- Other services defined in `docker-compose.yml`
 
 ---
-### -> Create Target Connector (MySQL Example)
-```bash
-#target-crud-flask-phone_book.json
 
+### 2. Import Sample Data into MariaDB
+
+We’ll use the classic `classicmodels` sample database as the data source. Make sure the `classicmodels.sql` file is located in your project directory.
+
+Run the following command to import it into the MariaDB container:
+
+```bash
+mysql -u root -pmysql-pass -P 4406 -h 127.0.0.1 < classicmodels.sql
+```
+
+**Notes**:
+- Adjust the `-P` port and `-p` password if they differ from your container setup.
+- Ensure MariaDB is fully started before executing this command.
+
+---
+
+## Debezium Connector
+
+This section defines the **source connector** configuration for Debezium. It establishes the connection to the **MariaDB** database and tells Debezium which schema and tables to monitor for changes.
+
+In this example, we are capturing changes from the `classicmodels.customers` table.
+
+### Source Connector Configuration (`source-classicmodels`)
+
+Save the following JSON content as `source-classicmodels.json`:
+
+```json
 {
-    "name": "target-crud-flask-phone_book",
-    "config": {
-        "autoReconnect": "true",
-        "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
-        "tasks.max": "1",
-        "connection.url": "jdbc:mysql://phonebook-mysql:3306/phone_book_replica",
-        "connection.username": "root",
-        "connection.password": "dev123",
-        "connection.pool.min_size": 1,
-        "connection.pool.max_size": 2,
-        "connection.pool.timeout": 300,
-        "insert.mode": "upsert",
-        "delete.enabled": "true",
-        "schema.evolution": "basic",
-        "auto.create": "true",
-        "topics.regex": "mysql-source-crud-flask.crud_flask.phone_book",
-        "error.log.enable": "true",
-        "primary.key.mode": "record_key",
-        "quote.identifiers": "true",
-        "transforms": "route",
-        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-        "transforms.route.regex": "mysql-source-crud-flask.crud_flask.phone_book",
-        "transforms.route.replacement": "phone_book",
-        "table.name.format": "${topic}"
-    }
+  "name": "source-classicmodels",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "tasks.max": "1",
+    "autoReconnect": "true",
+
+    "database.hostname": "mariadb",
+    "database.port": "3306",
+    "database.user": "root",
+    "database.password": "mysql-pass",
+    "database.server.id": "3363",
+
+    "database.include.list": "classicmodels",
+    "table.include.list": "classicmodels.customers",
+    "topic.prefix": "mysql-source-classicmodels",
+
+    "transforms.escapeReservedKeywords.replacement": "`$1`",
+
+    "schema.history.internal.kafka.bootstrap.servers": "broker:29092",
+    "schema.history.internal.kafka.topic": "schema-changes.mysql-source-classicmodels",
+
+    "signal.data.collection": "classicmodels.source-classicmodels-signal"
+  }
 }
 ```
 
-Create target connector with curl.
+#### Key Fields Explained
+
+| Field | Description |
+|-------|-------------|
+| `connector.class` | Type of Debezium connector; in this case, MySQL |
+| `database.include.list` | Only monitor the `classicmodels` schema |
+| `table.include.list` | Only capture changes for the `customers` table |
+| `topic.prefix` | Kafka topics will be prefixed with this value |
+| `schema.history.*` | Where Debezium stores schema changes internally |
+| `signal.data.collection` | Optional: used for incremental snapshot signaling |
+
+---
+
+#### Applying the Connector
+
+##### 1. Save the Configuration
+
+Save the configuration above as `source-classicmodels.json`.
+
+##### 2. Register the Connector with Kafka Connect
+
 ```bash
-curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors -k -d @target-crud-flask-phone_book.json
+curl -i -X POST http://localhost:8083/connectors \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d @source-classicmodels.json
 ```
 
-### -> Create Target Connector (PostgreSQL Example)
+##### 3. Verify the Connector Is Running
+
+List all connectors:
+
 ```bash
-#target-crud-flask-phone_book.json
+curl -s http://localhost:8083/connectors | jq
+```
+
+Check connector status:
+
+```bash
+curl -s http://localhost:8083/connectors/source-classicmodels/status | jq
+```
+
+Expected output:
+
+```json
 {
-    "name": "target-crud-flask-phone_book",
-    "config": {
-        "autoReconnect": "true",
-        "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
-        "tasks.max": "1",
-        "connection.url": "jdbc:postgresql://phonebook-postgres:5432/crud_flask?currentSchema=public",
-        "connection.username": "root",
-        "connection.password": "dev123",
-        "connection.pool.min_size": 1,
-        "connection.pool.max_size": 2,
-        "connection.pool.timeout": 300,
-        "insert.mode": "upsert",
-        "delete.enabled": "true",
-        "schema.evolution": "basic",
-        "auto.create": "true",
-        "topics.regex": "mysql-source-crud-flask.crud_flask.phone_book",
-        "error.log.enable": "true",
-        "primary.key.mode": "record_key",
-        "quote.identifiers": "true",
-        "transforms": "route",
-        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-        "transforms.route.regex": "mysql-source-crud-flask.crud_flask.phone_book",
-        "transforms.route.replacement": "phone_book",
-        "table.name.format": "${topic}"
+  "name": "source-classicmodels",
+  "connector": {
+    "state": "RUNNING",
+    "worker_id": "172.20.0.7:8083"
+  },
+  "tasks": [
+    {
+      "id": 0,
+      "state": "RUNNING",
+      "worker_id": "172.20.0.7:8083"
     }
+  ],
+  "type": "source"
 }
 ```
-Create target connector with curl.
+
+##### 4. View CDC Events in Kafka
+
+After inserting or updating data in `classicmodels.customers`, you can verify CDC events by consuming the topic:
+
 ```bash
-curl -i -X GET -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors
+docker exec -it broker kafka-console-consumer \
+  --bootstrap-server broker:9092 \
+  --topic mysql-source-classicmodels.classicmodels.customers \
+  --from-beginning
 ```
 
-### -> Get All Connectors List
-```bash
-curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors -k -d @target-crud-flask-phone_book.json
+You should see JSON messages representing change events (insert, update, delete).
+
+---
+
+## Debezium Connector Offsets
+
+Debezium uses **offsets** to track which changes it has already processed in the source database. These offsets correspond to the **binlog file name and position** in MySQL/MariaDB.
+
+You can **inspect**, **modify**, or **delete** offsets using the following Kafka Connect REST API endpoints:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET    | /connectors/<connector_name>/offsets | View current offset |
+| PATCH  | /connectors/<connector_name>/offsets | Modify offset to a specific binlog position |
+| DELETE | /connectors/<connector_name>/offsets | Remove offset and restart from beginning or snapshot |
+
+---
+
+### Get Current Binlog File (MariaDB/MySQL)
+
+To manually retrieve the current binlog file and position from MariaDB, connect to the database and run:
+
+```sql
+SHOW MASTER STATUS;
 ```
 
-### -> Delete Connector
-```bash
-curl -i -X DELETE -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors/<connector_name>
+Example output:
+
+```
++---------------------+----------+--------------+------------------+-------------------+
+| File                | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++---------------------+----------+--------------+------------------+-------------------+
+| mariadb-bin.000038  | 46451523 |              |                  |                   |
++---------------------+----------+--------------+------------------+-------------------+
 ```
 
-## ➕ Debezium Connector Offsets
+These values (`File` and `Position`) can be used to **manually reset Debezium’s offset** using the PATCH method.
 
-|Method | Path | Description|
-|-------|------|------------|
-|GET    |/connectors/<connector_name>/offsets|Get current target connector offset position|
-|PATCH  |/connectors/<connector_name>/offsets|Change current offset to another offset position|
-|DELETE |/connectors/<connector_name>/offsets|Delete a offset position from connector
+---
 
-### -> Patch Connector Offset
+### Get Binlog Position from Binlog Events
+
+If you need to find a specific binlog position based on an event (e.g. a known `INSERT` or `UPDATE`), you can inspect the binary logs directly using the `mysqlbinlog` utility.
+
+#### 1. Locate the Binlog File
+
+First, determine the available binlog files:
+
+```sql
+SHOW BINARY LOGS;
+```
+
+Example output:
+
+```
++---------------------+-----------+
+| Log_name            | File_size |
++---------------------+-----------+
+| mariadb-bin.000037  | 18768452  |
+| mariadb-bin.000038  | 29152291  |
++---------------------+-----------+
+```
+
+#### 2. Use `SHOW BINLOG EVENTS`
+
+This gives you a list of **all raw binlog events** in a given file:
+
+```sql
+SHOW BINLOG EVENTS IN 'mariadb-bin.000038'
+[FROM 46450000] LIMIT 10;
+```
+
+Example:
+
+```
++---------------------+-----------+-------------+-----------+-------------+---------------------------------------+
+| Log_name            | Pos       | Event_type  | Server_id | End_log_pos | Info                                  |
++---------------------+-----------+-------------+-----------+-------------+---------------------------------------+
+| mariadb-bin.000038  | 46451523  | Table_map   | 1         | 46451600    | table_id: 108 (classicmodels.customers) |
+| mariadb-bin.000038  | 46451600  | Write_rows  | 1         | 46451800    | table_id: 108 flags: STMT_END_F       |
++---------------------+-----------+-------------+-----------+-------------+---------------------------------------+
+```
+
+You can identify the event you're interested in (e.g. `Write_rows`) and extract its `Pos` value for the offset.
+
+#### 3. Use It in a PATCH Offset Request
+
+```json
+"file": "mariadb-bin.000038",
+"pos": 46451523
+```
+
+Paste this into your PATCH request as shown in the previous example.
+
+**Tips**:
+- Ensure the file path is correct and accessible (e.g. `/var/lib/mysql/mariadb-bin.000038` inside Docker).
+- You may need to copy the binlog file from the container to your host using `docker cp`.
+
+
+---
+
+### Modify Offset Manually (PATCH)
+
+Example: Set the offset for the connector `source-ehrm` to a specific binlog file and position.
+
 ```bash
-curl --location --globoff --request PATCH 'http://localhost:8083/connectors/source-eabsenpu/offsets/' \
+curl --location --globoff --request PATCH 'http://localhost:8083/connectors/source-ehrm/offsets/' \
 --header 'Content-Type: application/json' \
 --data '{
   "offsets":[
      {
         "partition":{
-           "server":"mysql-source-crud-flask"
+           "server":"mysql-classicmodels"
         },
         "offset":{
-        	"ts_sec": 1746288967,
-        	"file": "bin.000002",
-        	"pos": 4
+          "ts_sec": 1740005145,
+          "file": "mariadb-bin.000038",
+          "pos": 46451523
         }
      }
   ]
 }'
 ```
 
+**Note**: Replace `server`, `file`, and `pos` with your actual values. The `ts_sec` is optional and may be ignored depending on connector version.
+
 ---
 
-## 🧼 Cleanup
+### Clear Offset (DELETE)
 
-To stop and remove everything:
+To remove the stored offset and force Debezium to restart (from snapshot or earliest binlog position depending on connector settings):
+
+```bash
+curl -X DELETE http://localhost:8083/connectors/source-ehrm/offsets
+```
+
+---
+
+## CDC Verification Example
+
+This section shows how to test that CDC is working correctly, from insert → Kafka topic → target DB.
+
+---
+
+### 1. Insert Data Into Source MySQL
+
+Manually insert a record into the source database:
+
+```sql
+USE classicmodels;
+UPDATE customerName SET WHERE customerNumber=103;
+```
+
+---
+
+### 2. Consume Data From Kafka
+
+Use Kafka console tools to verify the message was produced:
+
+```bash
+docker exec -it broker kafka-console-consumer \
+  --bootstrap-server broker:9092 \
+  --topic mysql-source-classicmodels.classicmodels.customers \
+  --from-beginning
+```
+
+Expected output:
+
+```json
+{
+      "schema": { ... },
+      "payload": {
+            "before": {
+                  "customerNumber": 103,
+                  "customerName": "Atelier graphique",
+                  "contactLastName": "Schmitt",
+                  "contactFirstName": "Carine ",
+                  "phone": "40.32.2555",
+                  "addressLine1": "54, rue Royale",
+                  "addressLine2": null,
+                  "city": "Nantes",
+                  "state": null,
+                  "postalCode": "44000",
+                  "country": "France",
+                  "salesRepEmployeeNumber": 1370,
+                  "creditLimit": "IAsg"
+            },
+            "after": {
+                  "customerNumber": 103,
+                  "customerName": "Atelier graphie",
+                  "contactLastName": "Schmitt",
+                  "contactFirstName": "Carine ",
+                  "phone": "40.32.2555",
+                  "addressLine1": "54, rue Royale",
+                  "addressLine2": null,
+                  "city": "Nantes",
+                  "state": null,
+                  "postalCode": "44000",
+                  "country": "France",
+                  "salesRepEmployeeNumber": 1370,
+                  "creditLimit": "IAsg"
+            },
+            "source": { ... },
+            "transaction": null,
+            "op": "u",
+            "ts_ms": 1752933503893,
+            "ts_us": 1752933503893363,
+            "ts_ns": 1752933503893363201
+      }
+}
+```
+
+---
+
+### 3. Confirm Inserted Into Target DB
+
+Query the target database to confirm replication occurred:
+
+```sql
+SELECT * FROM phone_book;
+-- Should return: 1 | Alice | 12345
+```
+
+---
+
+---
+
+## Manage Debezium Connectors (Pause, Resume, Stop, Delete)
+
+Kafka Connect provides multiple ways to control connector behavior. Each affects how the connector interacts with the database and Kafka.
+
+---
+
+### Pause a Connector
+
+Temporarily halts the connector but keeps it registered. It stops processing binlog events and closes the database connection.
+
+```bash
+curl -X PUT http://localhost:8083/connectors/<connector_name>/pause
+```
+
+#### Behavior:
+- Disconnects from the database
+- Stops CDC event publishing
+- Can be resumed later (retains config and offset)
+
+---
+
+### Resume a Connector
+
+Resumes a paused connector, reconnecting to the database and continuing from the last offset.
+
+```bash
+curl -X PUT http://localhost:8083/connectors/<connector_name>/resume
+```
+
+#### Behavior:
+- Re-establishes DB connection
+- Resumes CDC and Kafka publishing
+
+---
+
+### Stop a Connector
+
+**Stops the connector completely** — similar to `pause`, but cannot be resumed via `resume`. You must explicitly **restart** it using:
+
+```bash
+curl -X PUT http://localhost:8083/connectors/<connector_name>/restart
+```
+
+```bash
+curl -X PUT http://localhost:8083/connectors/<connector_name>/stop
+```
+
+Example:
+
+```bash
+curl -X PUT http://localhost:8083/connectors/source-classicmodels/stop
+```
+
+#### Behavior:
+- Connector transitions to `STOPPED` state
+- Disconnects from database
+- Offset is preserved
+- Must be restarted (not resumed)
+
+---
+
+### Restart a Stopped Connector
+
+```bash
+curl -X POST http://localhost:8083/connectors/<connector_name>/restart
+```
+
+---
+
+### Delete a Connector
+
+Removes the connector entirely.
+
+```bash
+curl -X DELETE http://localhost:8083/connectors/<connector_name>
+```
+
+#### Behavior:
+- Unregisters the connector
+- Disconnects DB
+- Stops publishing
+- Offsets are retained unless explicitly removed:
+
+```bash
+curl -X DELETE http://localhost:8083/connectors/<connector_name>/offsets
+```
+
+---
+
+### Check Connector Status
+
+```bash
+curl -s http://localhost:8083/connectors/<connector_name>/status | jq
+```
+
+Returns one of: `RUNNING`, `PAUSED`, `FAILED`, `STOPPED`, etc.
+
+---
+
+## Dynamically Add a New Table Using Debezium Signals
+
+Debezium allows you to modify what tables are captured **at runtime**, without restarting the connector. This is done via the **incremental snapshot signal** sent to a control table inside the database.
+
+### Prerequisites
+
+Ensure your connector config includes:
+
+```json
+"signal.data.collection": "classicmodels.source-classicmodels-signal"
+```
+
+> This tells Debezium to listen to `classicmodels.source-classicmodels-signal` table for special instructions.
+
+Also, make sure the table exists in the database:
+
+```sql
+CREATE TABLE classicmodels.source-classicmodels-signal (
+  id VARCHAR(64) PRIMARY KEY,
+  type VARCHAR(32) NOT NULL,
+  data JSON NOT NULL
+);
+```
+
+---
+
+### Step-by-Step: Add a Table to the Connector
+
+Let’s say we want to start capturing the `classicmodels.orders` table in addition to `customers`.
+
+#### 1. Insert a Signal Record
+
+Run this SQL in MariaDB:
+
+```sql
+INSERT INTO classicmodels.`source-classicmodels-signal` (id, `type`, `data`) VALUES(
+  'orders',
+  'execute-snapshot',
+  '{
+    "data-collections": ["classicmodels.orders"],
+    "type":"blocking"
+  }'
+);
+```
+
+#### 2. Verify Signal Was Consumed
+
+You should see this reflected in Kafka logs or Debezium UI — the connector will start snapshotting the new table.
+
+Then, use this to verify Kafka topic:
+
+```bash
+docker exec -it broker kafka-console-consumer \
+  --bootstrap-server broker:9092 \
+  --topic mysql-source-classicmodels.classicmodels.orders \
+  --from-beginning
+```
+
+You should start seeing events from `orders`.
+
+---
+
+### Notes
+
+- This works even if the table was not originally included in `table.include.list`, as long as the connector config allows it (i.e. if `table.include.list` is not restrictive).
+- For more robust control, you can combine this with configuration changes via the Kafka Connect REST API.
+
+---
+
+## Cleanup
+
+Stop and remove all containers and volumes.
 
 ```bash
 docker-compose down -v
 ```
 
+Use this when you're done testing or want to reset everything.
+
 ---
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 
-- Use container logs to debug issues:
+Useful commands to debug common issues:
+
+- View container logs:
 
   ```bash
   docker logs <container_name>
   ```
 
-- Use Kafka UI and Debezium UI to inspect topics and connector states.
+- Check container health:
+
+  ```bash
+  docker inspect --format='{{json .State.Health}}' <container_name>
+  ```
 
 ---
 
-## 📌 Notes
+## Notes
 
-- You can add a **MySQL/PostgreSQL** service to your compose for a full CDC demo.
-- Topics will be auto-created by Kafka by default.
-- Adjust ports via `.env` or directly in `docker-compose.yml`.
+- Debezium uses the topic name format: `<prefix>.<database>.<table>`
+- Kafka will auto-create topics unless otherwise configured
+- Default ports can be changed in `.env` or `docker-compose.yml`
+- You can pause or resume a connector using:
+
+  ```bash
+  curl -X PUT http://localhost:8083/connectors/<name>/pause
+  curl -X PUT http://localhost:8083/connectors/<name>/resume
+  ```
 
 ---
 
-Happy streaming! 🚀
-
+Happy streaming!
